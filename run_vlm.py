@@ -18,11 +18,11 @@ env = gym.make("FetchPush-v4", render_mode="rgb_array")
 
 # --- 3. Define the Three Frame Variables ---
 observation, info = env.reset(seed=42)
-frame3 = env.render()
+frame1 = env.render()
 
 action = env.action_space.sample()
 observation, reward, terminated, truncated, info = env.step(action)
-frame3 = env.render()
+frame2 = env.render()
 
 action = env.action_space.sample()
 observation, reward, terminated, truncated, info = env.step(action)
