@@ -39,7 +39,8 @@ print("Loading VLM with 4-bit quantization...")
 # Define the quantization config (CRITICAL FOR 8GB GPU)
 quantization_config = BitsAndBytesConfig(
     load_in_4bit=True,
-    bnb_4bit_compute_dtype=torch.float16
+    bnb_4bit_compute_dtype=torch.float16,
+    llm_int8_enable_fp32_cpu_offload=True
 )
 
 model_id = "llava-hf/llava-v1.6-mistral-7b-hf"
@@ -55,7 +56,7 @@ model = LlavaNextForConditionalGeneration.from_pretrained(
 )
 
 print("VLM model loaded successfully (4-bit).")
-device = model.device 
+device = "cuda:0"
 
 # --- 5. Prepare Inputs and Save Frames ---
 # Convert numpy arrays to PIL Images
