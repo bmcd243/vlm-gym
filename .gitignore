@@ -1,0 +1,11 @@
+# Python
+__pycache__/
+*.pyc
+
+# Local output
+output/
+
+# Don't track large datasets
+*.png
+*.jpg
+data/
