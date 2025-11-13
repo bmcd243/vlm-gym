@@ -1,7 +1,7 @@
 import gymnasium as gym
 import gymnasium_robotics
 from PIL import Image
-from transformers import LlavaNextProcessor, LlavaNextForConditionalGeneration
+from transformers import LlavaNextProcessor, LlavaNextForConditionalGeneration, BitsAndBytesConfig # <--- Add BitsAndBytesConfig
 import torch
 import warnings
 import os
@@ -40,16 +40,28 @@ if device == "cpu":
 else:
     print("CUDA is available! Running on GPU.")
 
-print(f"Loading VLM model to {device}...")
+print("Loading VLM with 4-bit quantization...")
+
+# Define the quantization config
+quantization_config = BitsAndBytesConfig(
+    load_in_4bit=True,
+    bnb_4bit_compute_dtype=torch.float16
+)
+
 model_id = "llava-hf/llava-v1.6-mistral-7b-hf"
 
 processor = LlavaNextProcessor.from_pretrained(model_id)
+
+# Load model with the config
 model = LlavaNextForConditionalGeneration.from_pretrained(
     model_id,
-    torch_dtype=torch.float16,
+    quantization_config=quantization_config, # <--- This does the magic
+    device_map="auto",                       # <--- Automatically puts it on the GPU
     low_cpu_mem_usage=True,
-).to(device)
-print("VLM model loaded.")
+)
+
+print("VLM model loaded successfully (4-bit).")
+
 
 # --- 5. Prepare Inputs and Save Frames ---
 img1 = Image.fromarray(frame1)
@@ -69,10 +81,10 @@ user_prompt = (
 full_vlm_prompt = f"[INST] <image>\n<image>\<image>\n{user_prompt} [/INST]"
 
 inputs = processor(
-    text=full_vlm_prompt,
-    images=[img1, img2, img3],
+    text=full_vlm_prompt, 
+    images=[img1, img2, img3], 
     return_tensors="pt"
-).to(device)
+).to(device) # Use the device we grabbed earlier
 
 # --- 6. Generate and Save the VLM's Description ---
 print("Generating description from VLM...")
