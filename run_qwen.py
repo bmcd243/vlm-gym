@@ -3,6 +3,7 @@ import gymnasium_robotics
 from PIL import Image
 import torch
 import os
+import numpy as np  # Needed for defining specific actions
 from transformers import Qwen2VLForConditionalGeneration, AutoProcessor, BitsAndBytesConfig
 from qwen_vl_utils import process_vision_info
 
@@ -13,26 +14,41 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 # --- 2. Environment Setup ---
 print("Setting up the Gymnasium environment...")
 env = gym.make("FetchPush-v4", render_mode="rgb_array")
-
-# --- 3. Define the Three Frame Variables ---
 observation, info = env.reset(seed=42)
-frame1 = env.render()
-print(f"Frame 1 captured (shape: {frame1.shape})")
 
-action = env.action_space.sample()
-observation, reward, terminated, truncated, info = env.step(action)
-frame2 = env.render()
-print(f"Frame 2 captured (shape: {frame2.shape})")
+# --- 3. Define Specific Actions (The "Physics" Part) ---
+# Action format: [x_vel, y_vel, z_vel, gripper_vel]
+# Values are typically between -1.0 and 1.0
 
-action = env.action_space.sample()
-observation, reward, terminated, truncated, info = env.step(action)
-frame3 = env.render()
-print(f"Frame 3 captured (shape: {frame3.shape})")
+# Example: Move RIGHT (positive Y), slightly DOWN (negative Z) to get near table
+# We keep X (forward/back) mostly static.
+specific_action = np.array([0.0, 0.8, -0.2, 0.0], dtype=np.float32)
+
+frames = []
+num_frames = 8  # How many frames you want to generate
+
+print(f"Simulating {num_frames} frames of specific movement...")
+
+# Capture initial state
+frames.append(Image.fromarray(env.render()))
+
+for i in range(num_frames):
+    # Apply the SAME action repeatedly to create a continuous trajectory
+    observation, reward, terminated, truncated, info = env.step(specific_action)
+    
+    # Render and store as PIL Image
+    frame_array = env.render()
+    img = Image.fromarray(frame_array)
+    frames.append(img)
+    
+    # Save individual frames to disk to verify movement
+    img.save(os.path.join(OUTPUT_DIR, f"frame_{i}.png"))
 
 env.close()
+print(f"Captured {len(frames)} frames.")
 
 # --- 4. Load the VLM (Qwen2-VL-2B) ---
-print("Loading Qwen2-VL-2B with 4-bit quantization...")
+print("Loading Qwen2-VL-2B...")
 
 quantization_config = BitsAndBytesConfig(
     load_in_4bit=True,
@@ -40,7 +56,6 @@ quantization_config = BitsAndBytesConfig(
     llm_int8_enable_fp32_cpu_offload=True
 )
 
-# This model is much lighter (2B params vs 7B)
 model_id = "Qwen/Qwen2-VL-2B-Instruct"
 
 model = Qwen2VLForConditionalGeneration.from_pretrained(
@@ -51,43 +66,32 @@ model = Qwen2VLForConditionalGeneration.from_pretrained(
 
 processor = AutoProcessor.from_pretrained(model_id, min_pixels=256*28*28, max_pixels=1280*28*28)
 
-print("VLM model loaded successfully.")
-
 # --- 5. Prepare Inputs ---
-# Convert numpy arrays to PIL Images
-img1 = Image.fromarray(frame1)
-img2 = Image.fromarray(frame2)
-img3 = Image.fromarray(frame3)
-
-# Save the frames for inspection
-img1.save(os.path.join(OUTPUT_DIR, "frame1.png"))
-img2.save(os.path.join(OUTPUT_DIR, "frame2.png"))
-img3.save(os.path.join(OUTPUT_DIR, "frame3.png"))
 
 user_prompt = (
-    "These three images show a robot arm and a cube on a table, "
-    "in chronological order. Describe the movement of the robot arm."
+    "These images show a robot arm moving over time. "
+    "Describe the direction the arm is moving."
 )
 
-# Qwen uses a specific list-of-dicts format which is very clean for multi-image
+# Dynamically build the message content based on how many frames we generated
+content_list = []
+for img in frames:
+    content_list.append({"type": "image", "image": img})
+
+# Add the text prompt at the end
+content_list.append({"type": "text", "text": user_prompt})
+
 messages = [
     {
         "role": "user",
-        "content": [
-            {"type": "image", "image": img1},
-            {"type": "image", "image": img2},
-            {"type": "image", "image": img3},
-            {"type": "text", "text": user_prompt},
-        ],
+        "content": content_list,
     }
 ]
 
-# Prepare inputs for inference
+# --- 6. Generate Description ---
 text = processor.apply_chat_template(
     messages, tokenize=False, add_generation_prompt=True
 )
-
-# process_vision_info handles extraction of images from the message list
 image_inputs, video_inputs = process_vision_info(messages)
 
 inputs = processor(
@@ -99,10 +103,7 @@ inputs = processor(
 )
 inputs = inputs.to("cuda")
 
-# --- 6. Generate and Save Description ---
-print("Generating description from VLM...")
-
-# Inference
+print("Generating description...")
 generated_ids = model.generate(**inputs, max_new_tokens=128)
 
 generated_ids_trimmed = [
@@ -113,12 +114,7 @@ output_text = processor.batch_decode(
     generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False
 )[0]
 
-output_path = os.path.join(OUTPUT_DIR, "vlm_description.txt")
-with open(output_path, "w") as f:
-    f.write(output_text)
-
 print("\n" + "="*30)
-print(f"   VLM DESCRIPTION (saved to {output_path}):")
+print("   VLM DESCRIPTION:")
 print("="*30)
 print(output_text)
-print("\nScript finished.")
