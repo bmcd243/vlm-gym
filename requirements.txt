@@ -1,0 +1,9 @@
+# We specify the CUDA 12.1 index for torch
+torch --index-url https://download.pytorch.org/whl/cu121
+
+# The 'torch' extra for transformers ensures it works with PyTorch
+transformers[torch]
+accelerate
+gymnasium
+gymnasium-robotics
+pillow
