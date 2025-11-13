@@ -8,3 +8,4 @@ gymnasium
 gymnasium-robotics
 pillow
 bitsandbytes
+qwen_vl_utils
