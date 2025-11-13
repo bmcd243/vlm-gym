@@ -32,8 +32,8 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # 6. Copy code and setup output
-COPY run_vlm.py .
+COPY run_qwen.py .
 RUN mkdir -p /app/output
 
 # 7. Default command
-CMD ["python3", "run_vlm.py"]
+CMD ["python3", "run_qwen.py"]
